@@ -1,0 +1,92 @@
+---
+title: "The LGBTQ+ Minority, a Bellwether for Democracy?"
+format:
+  pdf:
+    toc: true
+    number-sections: true
+editor: visual
+---
+
+```{r load packages}
+#| include: false
+
+if (!"pacman" %in% installed.packages()[,1]){
+  install.packages("pacman")
+}
+
+# load pacman
+library("pacman")
+
+# load all other packages
+pacman::p_load("tidyverse", "here", "readxl", "ggplot2", "ggrepel")
+```
+
+```{r load datasets}
+#| include: false
+
+# load the LGBTQ+ freedom index
+LGBTQ_index <- 
+  readxl::read_xls(here("Datasets", 'GAI-Data-Download-2000-2020.xls'),
+                   col_names = FALSE) %>%
+  rename(country = "...1",
+         LGBTQ_Score = "...2",
+         coordinates = "...4") %>%
+  select(-...3)
+
+# read the freedom house score dataset
+Freedom_house <- 
+  readxl::read_xlsx(here("Datasets", 'All_data_FIW_2013-2023.xlsx'), sheet = 2)
+
+# also load the explanation of what the scores mean
+Freedom_house_guide <- 
+  readxl::read_xlsx(here("Datasets", 'All_data_FIW_2013-2023.xlsx'), sheet = 1)
+
+
+```
+
+```{r Filter and merge datasets}
+#| include: false
+
+Freedom_house_parsed <- Freedom_house %>%
+  # average the Civil liberties and political rights rating across all years
+  rename(country = "Country/Territory",
+         PR_rating = "PR rating",
+         CL_rating = "CL rating") %>%
+  group_by(country) %>%
+  mutate(PR_rating = mean(PR_rating),
+         CL_rating = mean(CL_rating)) %>%
+  distinct(country, .keep_all = TRUE) %>%
+  select(country, PR_rating, CL_rating) %>%
+  ungroup()
+  
+Merged_dataset <- left_join(LGBTQ_index, Freedom_house_parsed, by = "country")
+
+```
+
+```{r civil liberties plot}
+
+# civil liberties plot
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = CL_rating)) + geom_point() +
+  scale_y_reverse() +
+  geom_text_repel(aes(label=country)) +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("Civil Liberty Index (1 is Most Protected)")
+
+```
+
+```{r political rights plot}
+
+# political rights plot
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = PR_rating)) + geom_point() +
+  scale_y_reverse() +
+  geom_text_repel(aes(label=country)) +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("Political Rights Index (1 is Most Protected)")
+
+```
+
+# Main ideas
+
+-   The LGBTQ+ community provides the distinct advantage of existing to some degree in every country across the world, allowing for a comparable minority group across international borders.
+
+-   Minority groups often act as a bellwether for a Democracy because suppression of a one group represents a systematic weakness of a country's institutions and inability of democratic protections at large.
