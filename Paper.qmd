@@ -7,6 +7,11 @@ format:
 editor: visual
 ---
 
+```{r setup, include=FALSE}
+# turn off error message output
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
 ```{r load packages}
 #| include: false
 
@@ -18,7 +23,17 @@ if (!"pacman" %in% installed.packages()[,1]){
 library("pacman")
 
 # load all other packages
-pacman::p_load("tidyverse", "here", "readxl", "ggplot2", "ggrepel")
+pacman::p_load("tidyverse", "here", "readxl", "ggplot2", "ggrepel", "devtools")
+
+if (!"vdemdata" %in% installed.packages()[,1]){
+  devtools::install_github("vdeminstitute/vdemdata")
+}
+
+#load the democracy dataset
+library(vdemdata)
+
+
+
 ```
 
 ```{r load datasets}
@@ -41,7 +56,23 @@ Freedom_house <-
 Freedom_house_guide <- 
   readxl::read_xlsx(here("Datasets", 'All_data_FIW_2013-2023.xlsx'), sheet = 1)
 
-
+VDEM <- vdemdata::vdem %>% 
+  filter(year >= 2000) %>%
+  rename(country = "country_name") %>%
+  select(country, year, v2x_polyarchy, v2x_libdem, v2x_partipdem, v2x_delibdem, 
+         v2x_egaldem) %>%
+  group_by(country) %>%
+  mutate(v2x_polyarchy = mean(v2x_polyarchy),
+         v2x_libdem = mean(v2x_libdem),
+         v2x_partipdem = mean(v2x_partipdem), 
+         v2x_delibdem = mean(v2x_delibdem),
+         v2x_egaldem = mean(v2x_egaldem)) %>%
+  distinct(country, .keep_all = TRUE) %>%
+  select(-year) %>%
+  # rename any countries
+  mutate(country = 
+           case_when(country == "United States of America" ~ "United States",
+            .default = country))
 ```
 
 ```{r Filter and merge datasets}
@@ -61,32 +92,122 @@ Freedom_house_parsed <- Freedom_house %>%
   
 Merged_dataset <- left_join(LGBTQ_index, Freedom_house_parsed, by = "country")
 
+Merged_dataset <- left_join(Merged_dataset, VDEM, by = "country")
+
+```
+
+```{r define countries to label on plots}
+#| include: false
+
+label = c("Nepal", "Iceland", "Brazil", "Taiwan", "Israel", "France", "Thailand", "Vietnam", "Egypt", "Iraq", "Sudan", "Mongolia", "Ghana", "Bahamas", "Ukraine", "Russia", "Senegal", "Moldova", "Japan", "Iran", "United States", "Azerbaijan")
+
+Merged_dataset <- Merged_dataset %>%
+  mutate(label = case_when(country %in% label ~ country))
+
 ```
 
 ```{r civil liberties plot}
+#| echo: false
 
 # civil liberties plot
 ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = CL_rating)) + geom_point() +
+  # reverse the y axis as 1 is the most protected
   scale_y_reverse() +
-  geom_text_repel(aes(label=country)) +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
-  ylab("Civil Liberty Index (1 is Most Protected)")
+  ylab("Civil Liberty Index (1 is Most Protected)") +
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
 
+#ggsave(here("Output", "Civil_Liberties.png"), dpi = 1200)
 ```
 
 ```{r political rights plot}
+#| echo: false
 
 # political rights plot
 ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = PR_rating)) + geom_point() +
+  # inverse the y axis as 1 is represents the highest levels of protection
   scale_y_reverse() +
-  geom_text_repel(aes(label=country)) +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
-  ylab("Political Rights Index (1 is Most Protected)")
+  ylab("Political Rights Index (1 is Most Protected)") + 
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
+
+#ggsave(here("Output", "Political_Rights.png"), dpi = 1200)
+```
+
+```{r Electoral Democracy Index Plot}
+#| echo: false
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_polyarchy)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("V-Dem Electoral Democracy Index") + 
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
+```
+
+```{r Liberal Democracy Index Plot}
+#| echo: false
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_libdem)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("V-Dem Liberal Democracy Index") + 
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
+```
+
+```{r Participatory Democracy Index Plot}
+#| echo: false
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_partipdem)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("V-Dem Participatory Democracy Index") + 
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
 
 ```
 
-# Main ideas
+```{r  Deliberative democracy Index Plot}
+#| echo: false
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_delibdem)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("V-Dem Deliberative Democracy Index") + 
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
+
+```
+
+```{r Egalitarian democracy Index Plot}
+#| echo: false
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_egaldem)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("V-Dem Egalitarian Democracy Index") + 
+  # add a nonlinear trend line
+  geom_smooth() +
+  geom_text_repel(aes(label=label)) 
+
+```
+
+# Ideas
 
 -   The LGBTQ+ community provides the distinct advantage of existing to some degree in every country across the world, allowing for a comparable minority group across international borders.
 
 -   Minority groups often act as a bellwether for a Democracy because suppression of a one group represents a systematic weakness of a country's institutions and inability of democratic protections at large.
+
+-   Even if we ignore the humanity aspect, discrimination has an economic cost.
+
+-   Is social conservative inherently anti-democratic?
+
+# Abstract
+
+Democracy is a combination of the Greek words for people (demos) and power (kratos), so in it's simplest terms it means rule by the people. But this definition has evolved with time, specifically with the balance of majority rule versus the liberties of the minority.
+
+Spanning every country in the world, the lesbian, gay, bisexual, and transgender (LGBTQ+) minority provides a unique indicator of a country's democratic strength or lack thereof. As Democracy has evolved from simply majority rule to also upholding minority rights, it makes sense to look at the treatment of an often prosecuted group when determining whether or not a country is truly democratic. A failure to protect the basic civil liberties (i.e. freedom of expression, association, and beliefs) of one group can point to a wider systemic failing in institutions at large.
