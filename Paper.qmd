@@ -29,8 +29,14 @@ if (!"vdemdata" %in% installed.packages()[,1]){
   devtools::install_github("vdeminstitute/vdemdata")
 }
 
-#load the democracy dataset
+# load the democracy dataset
 library(vdemdata)
+
+# load the autocracy vs democracy Stanford dataset
+remotes::install_github("xmarquez/democracyData")
+
+library(democracyData)
+
 
 
 
@@ -38,6 +44,12 @@ library(vdemdata)
 
 ```{r load datasets}
 #| include: false
+
+# load the autocracy vs democracy stanford label dataset
+government_label = democracyData::magaloni %>%
+  filter(year == 2012) %>%
+  rename(country = "magaloni_country") %>%
+  select(country, regime_nr)
 
 # load the LGBTQ+ freedom index
 LGBTQ_index <- 
@@ -56,6 +68,18 @@ Freedom_house <-
 Freedom_house_guide <- 
   readxl::read_xlsx(here("Datasets", 'All_data_FIW_2013-2023.xlsx'), sheet = 1)
 
+Freedom_house_parsed <- Freedom_house %>%
+  # average the Civil liberties and political rights rating across all years
+  rename(country = "Country/Territory",
+         PR_rating = "PR rating",
+         CL_rating = "CL rating") %>%
+  group_by(country) %>%
+  mutate(PR_rating = mean(PR_rating),
+         CL_rating = mean(CL_rating)) %>%
+  distinct(country, .keep_all = TRUE) %>%
+  select(country, PR_rating, CL_rating) %>%
+  ungroup()
+
 VDEM <- vdemdata::vdem %>% 
   filter(year >= 2000) %>%
   rename(country = "country_name") %>%
@@ -73,50 +97,65 @@ VDEM <- vdemdata::vdem %>%
   mutate(country = 
            case_when(country == "United States of America" ~ "United States",
             .default = country))
+
+# Load the GDP per capita dataset
+GDPCAP <- read_xls(here("Datasets", "GDPPerCapita.xls")) %>% 
+  rename(country = "Country Name",
+         GDPperCap = "2005") %>%
+  select(country, GDPperCap)
+
+# Load the religion dataset
+Religion <- read_xlsx(here("Datasets", "religious-diversity-index.xlsx")) %>%
+  rename(nonaffiliated = "Percent Unaffiliated",
+         religiousdiversity = "RDI",
+         country = "Country") %>%
+  mutate(nonaffiliated = case_when(nonaffiliated == "< 0.1%" ~ "0",
+                                   .default = nonaffiliated)) %>%
+  mutate(nonaffiliated = as.numeric(nonaffiliated)) %>%
+  select(country, nonaffiliated, religiousdiversity)
 ```
 
-```{r Filter and merge datasets}
+```{r merge datasets}
 #| include: false
 
-Freedom_house_parsed <- Freedom_house %>%
-  # average the Civil liberties and political rights rating across all years
-  rename(country = "Country/Territory",
-         PR_rating = "PR rating",
-         CL_rating = "CL rating") %>%
-  group_by(country) %>%
-  mutate(PR_rating = mean(PR_rating),
-         CL_rating = mean(CL_rating)) %>%
-  distinct(country, .keep_all = TRUE) %>%
-  select(country, PR_rating, CL_rating) %>%
-  ungroup()
+
   
 Merged_dataset <- left_join(LGBTQ_index, Freedom_house_parsed, by = "country")
 
 Merged_dataset <- left_join(Merged_dataset, VDEM, by = "country")
+
+Merged_dataset <- left_join(Merged_dataset, GDPCAP, by = "country")
+
+Merged_dataset <- left_join(Merged_dataset, Religion, by = "country")
+
+Merged_dataset <- left_join(Merged_dataset, government_label, by = "country")
+  
 
 ```
 
 ```{r define countries to label on plots}
 #| include: false
 
-label = c("Nepal", "Iceland", "Brazil", "Taiwan", "Israel", "France", "Thailand", "Vietnam", "Egypt", "Iraq", "Sudan", "Mongolia", "Ghana", "Bahamas", "Ukraine", "Russia", "Senegal", "Moldova", "Japan", "Iran", "United States", "Azerbaijan")
+label = c("Nepal", "Iceland", "Brazil", "Taiwan", "Israel", "France", "Thailand", "Vietnam", "Egypt", "Iraq", "Sudan", "Mongolia", "Ghana", "Bahamas", "Ukraine", "Russia", "Senegal", "Moldova", "Japan", "Iran", "United States", "Azerbaijan", "Singapore")
 
 Merged_dataset <- Merged_dataset %>%
   mutate(label = case_when(country %in% label ~ country))
 
 ```
 
+## Correlative Graphs
+
 ```{r civil liberties plot}
 #| echo: false
 
 # civil liberties plot
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = CL_rating)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = CL_rating, color = regime_nr)) + geom_point() +
   # reverse the y axis as 1 is the most protected
   scale_y_reverse() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("Civil Liberty Index (1 is Most Protected)") +
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = CL_rating), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 
 #ggsave(here("Output", "Civil_Liberties.png"), dpi = 1200)
@@ -126,13 +165,13 @@ ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = CL_rating)) + g
 #| echo: false
 
 # political rights plot
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = PR_rating)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = PR_rating, color = regime_nr)) + geom_point() +
   # inverse the y axis as 1 is represents the highest levels of protection
   scale_y_reverse() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("Political Rights Index (1 is Most Protected)") + 
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = PR_rating), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 
 #ggsave(here("Output", "Political_Rights.png"), dpi = 1200)
@@ -141,33 +180,33 @@ ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = PR_rating)) + g
 ```{r Electoral Democracy Index Plot}
 #| echo: false
 
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_polyarchy)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_polyarchy, color = regime_nr)) + geom_point() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("V-Dem Electoral Democracy Index") + 
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_polyarchy), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 ```
 
 ```{r Liberal Democracy Index Plot}
 #| echo: false
 
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_libdem)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_libdem, color = regime_nr)) + geom_point() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("V-Dem Liberal Democracy Index") + 
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_libdem), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 ```
 
 ```{r Participatory Democracy Index Plot}
 #| echo: false
 
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_partipdem)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_partipdem, color = regime_nr)) + geom_point() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("V-Dem Participatory Democracy Index") + 
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_partipdem), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 
 ```
@@ -175,11 +214,11 @@ ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_partipdem))
 ```{r  Deliberative democracy Index Plot}
 #| echo: false
 
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_delibdem)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_delibdem, color = regime_nr)) + geom_point() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("V-Dem Deliberative Democracy Index") + 
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_delibdem), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 
 ```
@@ -187,13 +226,45 @@ ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_delibdem)) 
 ```{r Egalitarian democracy Index Plot}
 #| echo: false
 
-ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_egaldem)) + geom_point() +
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_egaldem, color = regime_nr)) + geom_point() +
   xlab("LGBTQ+ Index (10 is Most Accepted)") +
   ylab("V-Dem Egalitarian Democracy Index") + 
   # add a nonlinear trend line
-  geom_smooth() +
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_egaldem), inherit.aes = FALSE) +
   geom_text_repel(aes(label=label)) 
 
+```
+
+## Confounding Graphs
+
+```{r GDP per capita graph}
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = GDPperCap, color = regime_nr)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("GDP per Capita") + 
+  # add a nonlinear trend line
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = GDPperCap), inherit.aes = FALSE) +
+  geom_text_repel(aes(label=label)) 
+```
+
+```{r Unaffiliated Religion}
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = nonaffiliated, color = regime_nr)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("Percent Religiously Nonaffiliated") + 
+  # add a nonlinear trend line
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = nonaffiliated), inherit.aes = FALSE) +
+  geom_text_repel(aes(label=label)) 
+```
+
+```{r Religious Diversity}
+
+ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = religiousdiversity, color = regime_nr)) + geom_point() +
+  xlab("LGBTQ+ Index (10 is Most Accepted)") +
+  ylab("Religion Diversity") + 
+  # add a nonlinear trend line
+  geom_smooth(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = religiousdiversity), inherit.aes = FALSE) +
+  geom_text_repel(aes(label=label)) 
 ```
 
 # Ideas
@@ -206,8 +277,34 @@ ggplot(data = Merged_dataset, mapping = aes(x = LGBTQ_Score, y = v2x_egaldem)) +
 
 -   Is social conservative inherently anti-democratic?
 
-# Abstract
+-   Chicken and egg problem, does LGBTQ tolerance make a democracy or does democracy create LGBTQ tolerance
 
-Democracy is a combination of the Greek words for people (demos) and power (kratos), so in it's simplest terms it means rule by the people. But this definition has evolved with time, specifically with the balance of majority rule versus the liberties of the minority.
+-   Qatar world cup provides a perfect example where even being the eye of the world stage does not protect the LGBTQ community from discrimination or reprisals
 
-Spanning every country in the world, the lesbian, gay, bisexual, and transgender (LGBTQ+) minority provides a unique indicator of a country's democratic strength or lack thereof. As Democracy has evolved from simply majority rule to also upholding minority rights, it makes sense to look at the treatment of an often prosecuted group when determining whether or not a country is truly democratic. A failure to protect the basic civil liberties (i.e. freedom of expression, association, and beliefs) of one group can point to a wider systemic failing in institutions at large.
+-   Are religious democracies the odd ones out?
+
+# Abstract 
+
+There is no authoritarian country that actively, openly supports Lesbian, Gay, Bisexual, Transgender, and Queer (LGBTQ) rights but not all Democracies do either. This raises the question of why LGBTQ rights are an accurate indicator for autocracy but flawed when it comes to Democracy. Established research has provided some clues towards this puzzle. Namely, Democracy's core tenants of ensuring minority rights, freedom of expression, and freedom of association provide a safe place for sexuality or gender discussion and discovery. Therefore, Democratic principles enable LGBTQ groups, but there is a wide stratification around the world of what a Democracy actually means and how these postulates are implemented.
+
+This posits whether a government that does not protect the rights of the minority can be considered a Democracy? Even if they are not outright disenfranchised, it can be argued that flaws in protecting one minority group reflects a weakness in civil institutions, influence of international non-governmental organizations (NGO), and horizontal checks from the legislature and judicial. As a Democratic indicator, the LGBTQ community is unique for existing to some degree in every populated country in the world, universally as a minority. Even without disenfranchisement, this guarantee of a being a minority makes the LGBTQ community a prime target for discrimination and attacks, both of which a healthy Democracy should be able to repel.
+
+Nepal provides an interesting test of this theory as it is considered a middling, flawed Democracy, ranked similarly to Kenya and Turkey by V-Dem, yet its University of California, Los Angeles Williams Institute Global Acceptance index score (i.e. how tolerant a country is of LGBTQ community) is comparable to Germany and France. This discrepancy is best explained by a progressive leap by Nepal's Supreme Court, which ruled 2007 that the government had to create a third gender category, audit all laws that discriminate against the LGBTQ community, and form a committee to study legal recognition of same-sex relationships [cite](https://www.hrw.org/news/2017/08/11/how-did-nepal-become-global-lgbt-rights-beacon). This forced the government to improve its protections and recognition of the LGBTQ minority far above its similarly Democratic peers, highlighting that a country can be more LGBTQ tolerant than its quality of Democracy would suggest.
+
+Despite outliers like Nepal, this research argues that the tolerance and protection of the LGBTQ community indicates not only whether a country is Democratic but its quality of Democracy as well. Quality of a Democracy measured through a country's civil liberties, political rights, judicial independence, civil institution strength, election integrity, and overall Democratic score. Current research has established a nation's wealth as well as how secular it is as the two primary confounding factors when analyzing the relationship between LGBTQ tolerance and Democratic levels (i.e. wealthy, secular nations tend to be more LGBTQ tolerant but neither of these core Democratic tenants).
+
+# Existing Literature
+
+# Confounding Variables
+
+# Civil Liberties
+
+# Political Rights
+
+# Judicial Independence
+
+# Civil Institutions
+
+# Election Integrity
+
+# Overall Democratic Scores
